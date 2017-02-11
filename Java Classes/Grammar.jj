@@ -1,0 +1,1002 @@
+//*************************************************************************************************
+//
+// Nick Capurso
+// COSC 40603
+// Compiler Project
+// Due: Sunday, December 8, 2013
+// Instructor: Dr. Rinewalt
+//
+//*************************************************************************************************
+
+options
+{
+  LOOKAHEAD=2;
+}
+
+//*************************************************************************************************
+//Begin Parser
+//	This class serves as the parser, it contains static arrays for the symbol table,
+//	quads, and the argument/result stack. It includes the various methods for adding
+//	new symbols or quads to their appropriate table as well as searching the symbol table.
+//
+//	After generating quads, a CodeGenerator object is created that will handle code gen.
+//
+//*************************************************************************************************
+PARSER_BEGIN(Parser)
+
+import java.util.ArrayList;
+import java.util.Stack;
+public class Parser 
+{
+
+  //***********************************************************************************************
+  //
+  // Class Variables
+  //
+  // Variables		Type							Description
+  // ---------		----------------------------	-----------------------------------------------
+  // symbolTable	ArrayList<SymbolTableEntry>		The symbol table (SymbolTableEntry is described
+  //												in its respective class)
+  // quadList		ArrayList<Quad>					The list of generated quads
+  // argumentStack	Stack<String>					The stack upon which variables representing
+  //												an evaluated expression are pushed and popped
+  //												to be used as arguments for quads
+  // whileStack		Stack<WhileItem>				The stack that keeps track of the nesting
+  //												of labeled while loops
+  // currentTempNum	int								The current temporary variable number
+  //
+  //***********************************************************************************************
+  private static ArrayList<SymbolTableEntry> symbolTable = new ArrayList<SymbolTableEntry >();
+  private static ArrayList<Quad> quadList = new ArrayList<Quad >();
+  private static Stack<String> argumentStack = new Stack<String>();
+  private static Stack<WhileItem> whileStack = new Stack<WhileItem>();
+  private static int currentTempNum = 0;
+
+  //*******************************************************************************************
+  // Begin Main Method
+  //	Creates the parser class and the code generator class
+  //
+  //*******************************************************************************************
+  public static void main (String [] args) throws ParseException
+  {
+	Parser parser = new Parser(System.in);
+	parser.Program();
+	
+	CodeGenerator codeGenerator = new CodeGenerator(quadList, symbolTable);
+	codeGenerator.genCode();
+  }
+  //*******************************************************************************************
+  // End Main Method 
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin Find Symbol Table Entry By Id Method
+  //	Searches the symbol table for an entry matching the passed in identifier.
+  //	Returns either the index into the symbol table, if found, or -1 if not found.
+  //
+  //*******************************************************************************************
+  private static int findSTEntryById(String id)
+  {
+ 	int index = 0;
+	for(SymbolTableEntry current : symbolTable)
+	{
+		if(current.getIdentifier().equals(id))
+			return index;
+		
+		index++;	
+	}
+	return -1;
+  }
+  //*******************************************************************************************
+  // End Find Symbol Table Entry by Id Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin Generate Symbol Table Entry Method
+  //	Generates an entry in the symbol table with the passed in identifier.
+  //
+  //*******************************************************************************************
+  private static void genSTEntry(String id)
+  {
+	symbolTable.add(new SymbolTableEntry(id, 0, SymbolTableEntry.Location.MEMORY));
+  }
+  //*******************************************************************************************
+  // End Generate Symbol Table Entry Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin Generate Quad Method
+  //	Generates an quad from the passed in operator, two arguments, and result. The quad
+  //	is added to the quads list.
+  //
+  //*******************************************************************************************
+  private static void genQuad(String op, String arg1, String arg2, String result)
+  {
+	quadList.add(new Quad(op, arg1, arg2, result));    
+  }
+  //*******************************************************************************************
+  // End Generate Quad Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin New Temp Method
+  //	Returns a new temporary variable (String) and increments the counter.
+  //	Temporary variables are of the format "$X"
+  //
+  //*******************************************************************************************
+  private static String newTemp()
+  {
+	return "$" + currentTempNum++;
+  }
+  //*******************************************************************************************
+  // End New Temp Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin Backpatch Method
+  //	Goes through jump/jeqz quads until a "0" is found in the result field. The quads'
+  //	result fields are set to point to the new quad specified.
+  //
+  //	start - indicates the quad number where the backpatch operation should begin.
+  //	newQuad - indicates the new quad number that should be patched.
+  //
+  //*******************************************************************************************
+  private static void backpatch(int start, int newQuad)
+  {
+	int curr = start;
+	boolean done = false;
+	Quad currentQuad;
+	do
+	{
+	  	//Get the next quad
+	  	currentQuad = quadList.get(curr);
+
+		//If its result is "0," then this is the last quad to patch
+	  	if(currentQuad.getResultName().equals("0"))
+			done = true;
+		//If the quad is not a jeqz or jump quad, quit	
+		else if(!(currentQuad.getOperation().equals("jeqz") ||
+			currentQuad.getOperation().equals("jump")))
+			break;
+
+		//Get the next quad number
+		if(!done)
+			curr = Integer.parseInt(currentQuad.getResultName());
+
+		//Replace the old result with the new result	
+		currentQuad.setResultName(""+newQuad);
+	}while (!done);
+  }
+  //*******************************************************************************************
+  // End Backpatch Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // Begin While Stack Contains Method
+  //	Searches the while stack to see if a while loop with the given label already exists.
+  //	Returns either true or false.
+  //
+  //*******************************************************************************************
+  private static boolean whileStackContains(String search)
+  {
+	for(int i = 0; i < whileStack.size(); i++)
+	{
+		if(whileStack.get(0).id.equals(search))
+			return true;
+	}
+	return false;
+  }
+  //*******************************************************************************************
+  // End While Stack Contains Method
+  //*******************************************************************************************
+
+
+  //*******************************************************************************************
+  // WhileItem Class
+  //	Two-tuple class for the label of a while loop and a "pointer" to another quad in order
+  //	to chain EXIT statements together
+  //
+  //*******************************************************************************************
+  static class WhileItem
+  {
+    String id;
+    int value;
+
+    public WhileItem(String i, int v)
+    {
+		id = i;
+		value = v;
+    }
+  }
+  //*******************************************************************************************
+  // End WhileItem Class
+  //*******************************************************************************************
+}
+PARSER_END(Parser)
+//*************************************************************************************************
+// End Parser
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+//*************************************************************************************************
+// Begin Productions
+//	program 	=> 	(statement)*
+//	statement	=>	(label-id)? (WHILE expression)? LOOP (statement)* END LOOP;
+//				=>	IF expression THEN (statement)* (ELSIF expression THEN (statement)*)*
+//					(ELSE (statement)*)? END IF;
+//				=>	id := expression
+//				=>	EXIT label-id;
+//				=>	GET(input-list);
+//				=>  PUT(output-list);
+//	label-id	=>	id
+//	input-list	=>	id(,id)*
+//	output-list	=>	(string | expression) (, (string | expression))*
+//	expression	=>	and (| and)*
+//	and			=>	rel (& rel)*
+//	rel			=>	term (rel-op term)*
+//	term		=>	factor (add-op factor)*
+//	factor		=>	primary (mul-op primary)*
+//	primary		=>	(unary-op)* unit
+//	unit		=>	id | int | (SQRT | ABS)* ( expression )
+//	rel-op		=>	< | <= | = | /= | >= | >
+// 	mul-op		=>	* | /
+//	add-op		=>	+ | -
+//	unary-op	=>	+ | - | ^
+//
+//*************************************************************************************************
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Program Production
+//	program 	=> 	(statement)*
+//
+//*************************************************************************************************
+void Program() :
+{}
+{  	
+   (Statement())* (< EOF > | < QUIT >)
+   {
+     genQuad("END", " ", " ", " ");	//Placeholder end-of-quad-list
+   }
+}
+//*************************************************************************************************
+// End Program Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Statement Production
+//	statement	=>	(label-id)? (WHILE expression)? LOOP (statement)* END LOOP;
+//				=>	IF expression THEN (statement)* (ELSIF expression THEN (statement)*)*
+//					(ELSE (statement)*)? END IF;
+//				=>	id := expression
+//				=>	EXIT label-id;
+//				=>	GET(input-list);
+//				=>  PUT(output-list);
+//
+//	Variables		Type			Description
+//	---------		--------		-----------
+//	id				Token			Holds a matched identifier
+//
+//	temp			Stack<Integer>	Used to keep track of jump/jeqz in while/if statements to
+//									resolve forward jumps
+//
+//	nextQuad		int				Holds the number of the next quad to be generated
+//
+//	labelId			String			Holds a label for a loop
+//
+//*************************************************************************************************
+void Statement():
+{
+  Token id;
+  Stack<Integer> temp = new Stack<Integer>();
+  int nextQuad = 0;
+  String labelId = "";
+}
+{
+
+  //-------------------------------------------------------------------------------------
+  // Begin Assignment Statement
+  //	id := expression @1
+  //
+  //	@1: After an assignment statement is matched, add the new variable to the symbol
+  //		if it isn't already in there. Generate the assignment quad.
+  //
+  //-------------------------------------------------------------------------------------
+  id = < ID > < ASSN > Expression() < SEMICOL >
+  { //@1
+	if(findSTEntryById(id.image.toUpperCase()) == -1)
+      	genSTEntry(id.image.toUpperCase()); //Not in symbol table - add it
+	genQuad(":=", argumentStack.pop(), " ", id.image.toUpperCase());	
+  }
+  //-------------------------------------------------------------------------------------
+  // End Assignment Statement
+  //-------------------------------------------------------------------------------------
+
+  //-------------------------------------------------------------------------------------
+  // Begin If Statement
+  //	IF expression @1 THEN (statement)* (ELSIF @2 expression @3 THEN (statement)*)*
+  //	(ELSE @4 (statement)*)? END IF; @5
+  //
+  //	@1: Save the location of the jeqz-quad-to-be-generated on
+  //		the temp stack so its jump target can be fixed later
+  //	@2:	Need to generate a jump so that if the previous IF statement's statements
+  //		were execute, that it jumps to the end and doesn't fall through and
+  //		execute subsequent elsif's. Save the jump quad's location so it can be
+  //		fixed later.
+  //	@3:	Same as @1
+  //	@4:	Save the location of the jump-quad-to-be-generated
+  //		then, get the jeqz quad whose index is on top of the temp stack
+  //		and set its target to the next quad
+  //	@5: At the end, go back and fix the any forward jumps that need to point
+  //		to the first statement after the IF statement.
+  //
+  //-------------------------------------------------------------------------------------
+| < IF > Expression()
+	{ //@1
+	  nextQuad = quadList.size();
+	  genQuad("jeqz", argumentStack.pop(), " ", "0");
+	  temp.push(nextQuad);
+	}
+	< THEN > (Statement())* //Statements in the THEN clause
+
+	//Else-if
+	(< ELSIF >
+	{ //@2
+	  nextQuad = quadList.size();
+	  genQuad("jump", " ", " ", "0");
+	  quadList.get(temp.pop()).setResultName("" + (nextQuad+1));
+	  temp.push(nextQuad);
+
+	}Expression() //ELSIF expression
+	{ //@3
+	  nextQuad = quadList.size();
+	  genQuad("jeqz", argumentStack.pop(), " ", "0");
+	  temp.push(nextQuad);
+	}
+
+	//Then-clause of the Else-if
+	< THEN > ((Statement())*))* 
+
+	//Else-clause
+	(< ELSE >
+	{ //@4
+	  nextQuad = quadList.size();
+	  genQuad("jump", " ", " ", "0");
+	  quadList.get(temp.pop()).setResultName("" + quadList.size());
+	  temp.push(nextQuad);
+	}
+	(Statement())*)? //Statements in the ELSE clause
+	< END > < IF > < SEMICOL >
+	{ //@5
+	  while(!(temp.isEmpty()))
+	  	quadList.get(temp.pop()).setResultName("" + quadList.size());
+	}
+  //-------------------------------------------------------------------------------------
+  // End If Statement
+  //-------------------------------------------------------------------------------------
+
+
+  //-------------------------------------------------------------------------------------
+  // Begin Loop Statement
+  //	(label-id)? @1/2 (WHILE expression @3)?  LOOP (statement)* END LOOP; @4
+  //
+  //	@1: If a unique label has been specified, push it onto the while stack and
+  //		save the location of next quad on the temp stack (beginning of loop)
+  //	@2:	If a label has not been specified, generate a new temporary as the
+  //		name and push it onto the while stack. Save the location of next
+  //		quad on the temp stack (beginning of loop)
+  //	@3:	Set the value of the item on top of the while stack to next quad.
+  //		Also generate the conditional jump
+  //	@4:	Generate the jump quad to go back to the beginning. Backpatch with
+  //		the now-known end of the loop
+  //
+  //-------------------------------------------------------------------------------------
+| (labelId = LabelId() < COLON >)?
+	{
+		if(labelId.equals(""))
+		{	//@1
+			whileStack.push(new WhileItem(newTemp(),0));
+			nextQuad = quadList.size();
+			temp.push(nextQuad);
+		}
+		else
+		{	//@2
+			if(whileStackContains(labelId))
+				throw new RuntimeException("Loop " + labelId + " already exists, may create ambiguous EXIT statements");
+			
+			whileStack.push(new WhileItem(labelId,0));
+			nextQuad = quadList.size();
+			temp.push(nextQuad);
+		}
+	}
+ 	(< WHILE > Expression() 
+ 	{	//@3
+		whileStack.peek().value = quadList.size();
+		genQuad("jeqz", argumentStack.pop()," ", "0");
+ 	}
+ 	)? < LOOP > (Statement())* < END > < LOOP > < SEMICOL >
+ 	{	//@4
+		genQuad("jump", " ", " ", ""+temp.pop());
+		backpatch(whileStack.pop().value, quadList.size());
+	}
+  //-------------------------------------------------------------------------------------
+  // End Loop Statement
+  //-------------------------------------------------------------------------------------
+
+	
+  //-------------------------------------------------------------------------------------
+  // Begin Exit Statement
+  //	EXIT (label-id)?; @1
+  //
+  //	@1: Generate the jump quad and adjust the corresponding while-loop item on the
+  //		while stack so that the quad will be fixed in backpatch
+  //
+  //-------------------------------------------------------------------------------------
+| < EXIT > (labelId = LabelId())? < SEMICOL >
+	{	
+		if(labelId.equals(""))
+		{	//@1 - Unlabeled exit
+			nextQuad = quadList.size();
+			genQuad("jump"," "," ",""+whileStack.peek().value);
+			whileStack.peek().value = nextQuad;
+		}else
+		{	//@1 - Labeled exit
+			nextQuad = quadList.size();
+			int loc = 0;
+			for(int i = 0; i < whileStack.size(); i++)
+			{
+				if(whileStack.get(i).id.equals(labelId))
+				{
+					loc = i;
+					break;
+				}
+			}
+	
+			genQuad("jump"," "," ",""+whileStack.get(loc).value);
+			whileStack.get(loc).value = nextQuad;
+		}
+	}
+  //-------------------------------------------------------------------------------------
+  // End Exit Statement
+  //-------------------------------------------------------------------------------------	
+
+  //-------------------------------------------------------------------------------------
+  // Begin Get Statement
+  //	GET(input-list);
+  //
+  //	Semantic actions are done in the input-list production. Similar actions could 
+  //	have also been taken after the semicolon, but would require the input list
+  //	to return a list of identifiers.
+  //
+  //-------------------------------------------------------------------------------------
+| < GET > <LPARAN > InputList() < RPARAN > < SEMICOL >
+  //-------------------------------------------------------------------------------------
+  // End Get Statement
+  //-------------------------------------------------------------------------------------	
+
+  //-------------------------------------------------------------------------------------
+  // Begin Put Statement
+  //	PUT(output-list);
+  //
+  //	Similar to Get statement.
+  //
+  //-------------------------------------------------------------------------------------
+| < PUT > < LPARAN > OutputList() < RPARAN > < SEMICOL >
+  //-------------------------------------------------------------------------------------
+  // End Put Statement
+  //-------------------------------------------------------------------------------------	
+}
+//*************************************************************************************************
+// End Statement Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin LabelId Production
+//	label-id	=>	id
+//
+//	Returns a String representing the identifier that was matched. (ToUpperCase because not
+//	case-sensitive)
+//
+//*************************************************************************************************
+String LabelId():
+{}
+{
+  < ID >
+  {
+	return getToken(0).image.toUpperCase();
+  }
+}
+//*************************************************************************************************
+// End LabelId Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin InputList Production
+//	input-list	=>	id @1 (,id @2)*
+//
+//	@1: Checks to see if the identifier has been declared. Then generates the get-quad.
+//	@2: Same as @1
+//
+//*************************************************************************************************
+void InputList():
+{
+  Token token = null;
+}
+{
+  token = < ID >
+  { //@1
+  	if(findSTEntryById(token.image.toUpperCase()) == -1)
+		throw new RuntimeException("Variable " + token.image + " not declared!");
+	genQuad("get"," "," ", token.image.toUpperCase());
+  }
+  (< COMMA > token = <ID >
+  {	//@2
+  	if(findSTEntryById(token.image.toUpperCase()) == -1)
+		throw new RuntimeException("Variable " + token.image + " not declared!");
+	genQuad("get"," "," ", token.image.toUpperCase());
+  })*
+}
+//*************************************************************************************************
+// End InputList Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin OutputList Production
+//	output-list	=>	(string @1| expression @2) (, (string @3| expression @4))*
+//
+//	@1: Adds the string literal to the symbolt table if it's not already there and generates
+//		a putString quad.
+//	@2: Generates a putInt instruction based on the top of the stack (contains the value
+//		of the evaluated expression)
+//	@3: Same as @1
+//	@4: Same as @2
+//
+//*************************************************************************************************
+void OutputList():
+{
+  Token token = null;
+  int index = 0;
+}
+{
+  (token = < STRING >
+  { //@1
+    index = findSTEntryById(token.image);
+	if(index == -1)
+	{
+      genSTEntry(token.image); //Add literal to symbol table
+      genQuad("putString", token.image," ", " ");
+    }
+    else
+    {
+	  genQuad("putString", token.image," ", " "); 
+    }
+  }
+  | Expression()
+  { //@2
+    genQuad("putInt", argumentStack.pop()," ", " "); 
+  }
+  ) (< COMMA > (token = < STRING >
+  { //@3
+    index = findSTEntryById(token.image);
+	if(index == -1)
+	{
+      genSTEntry(token.image);	//Add literal to symbol table
+      genQuad("putString", token.image," ", " "); 
+    }
+    else
+    {
+	  genQuad("putString", token.image," ", " ");
+    }
+  }
+  | Expression()
+  { //@4
+	genQuad("putInt",  argumentStack.pop()," ", " "); 
+  }))*
+}
+//*************************************************************************************************
+// End OutputList Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Expression Production
+//	expression	=>	and (| and @1)*
+//
+//	@1: Generates a quad using the top two things on the argument stack (two operands) and an
+//		OR operator. The result goes into a temporary variable.
+//
+//*************************************************************************************************
+void Expression():
+{}
+{
+  And() (< OR > And()
+  {	//@1
+	String secondArg = argumentStack.pop();
+	String firstArg = argumentStack.pop();
+	String temp = newTemp();
+
+	genQuad("|", firstArg, secondArg, temp);
+
+	genSTEntry(temp);
+	argumentStack.push(temp);
+  }
+  )* 
+}
+//*************************************************************************************************
+// End Expression Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin And Production
+//		and	=>	rel (& rel @1)*
+//
+//	@1: Generates a quad using the top two things on the argument stack (two operands) and an
+//		AND operator. The result goes into a temporary variable.
+//
+//*************************************************************************************************
+void And():
+{}
+{
+  Rel() (< AND > Rel()
+  {	//@1
+	String secondArg = argumentStack.pop();
+	String firstArg = argumentStack.pop();
+	String temp = newTemp();
+
+	genQuad("&", firstArg, secondArg, temp);
+
+	genSTEntry(temp);
+	argumentStack.push(temp);
+  }
+  )* 
+}
+//*************************************************************************************************
+// End And Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Rel Production
+//		rel	=>	term (rel-op term @1)*
+//
+//	@1: Generates a quad using the top two things on the argument stack (two operands) and an
+//		the relational operator. The result goes into a temporary variable.
+//
+//*************************************************************************************************
+void Rel():
+{
+	String op;
+}
+{
+  Term() (op = Rel_Op() Term()
+  {
+	String secondArg = argumentStack.pop();
+	String firstArg = argumentStack.pop();
+	String temp = newTemp();
+
+	genQuad(op, firstArg, secondArg, temp);
+
+	genSTEntry(temp);
+	argumentStack.push(temp);
+  }
+  )*
+}
+//*************************************************************************************************
+// End Rel Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Term Production
+//		term =>	factor (add-op factor @1)*
+//
+//	@1: Generates a quad using the top two things on the argument stack (two operands) and an
+//		the add-operator. The result goes into a temporary variable.
+//
+//*************************************************************************************************
+void Term():
+{
+  	String op;
+}
+{
+  Factor() (op = Add_Op()  Factor()
+  {
+	String secondArg = argumentStack.pop();
+	String firstArg = argumentStack.pop();
+	String temp = newTemp();
+
+	genQuad(op, firstArg, secondArg, temp);
+
+	genSTEntry(temp);
+	argumentStack.push(temp);
+  }
+  )*
+}
+//*************************************************************************************************
+// End Term Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Factor Production
+//		term =>	primary (mul-op primary @1)*
+//
+//	@1: Generates a quad using the top two things on the argument stack (two operands) and an
+//		the mul-operator. The result goes into a temporary variable.
+//
+//*************************************************************************************************
+void Factor():
+{
+	String op;
+}
+{
+  Primary() (op = Mul_Op() Primary()
+  {
+	String secondArg = argumentStack.pop();
+	String firstArg = argumentStack.pop();
+	String temp = newTemp();
+
+	genQuad(op, firstArg, secondArg, temp);
+
+	genSTEntry(temp);
+	argumentStack.push(temp);
+  }
+  )*
+}
+//*************************************************************************************************
+// End Factor Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Primary Production
+//		primary	=>	(unary-op @1)* unit @2
+//
+//	unaryOps - A stack that keeps track of the unary operators being applied to a unit, so that
+//			   the appropriate quads can be generated in reverse.
+//
+//	@1:	Pushes the matched unary operator onto the stack.
+//	@2:	Generates quads for each of the matched unary operators. The result goes into a
+//		temporary variable.
+//
+//*************************************************************************************************
+void Primary():
+{
+  	String op;
+  	Stack<String> unaryOps = new Stack<String>();
+}
+{
+  (op = Unary_Op()
+  {	//@1
+	unaryOps.push(op);
+  }
+  )*
+  Unit()
+  {	//@2
+	
+	if(!unaryOps.isEmpty())
+	{
+	  	int s = unaryOps.size();
+
+		for(int i = 0; i < s; i ++)
+		{
+		  	String temp = newTemp();
+			genQuad(unaryOps.pop(), argumentStack.pop(), " ", temp);
+
+			genSTEntry(temp);
+			argumentStack.push(temp);
+		}
+	}
+  }
+}
+//*************************************************************************************************
+// End Primary Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Unit Production
+//		unit	=>	id @1| int @2| (SQRT | ABS)* ( expression ) @3
+//
+//	@1:	Checks to make sure the variable has been declared, then pushes it onto the argument stack
+//	@2:	Adds the constant to the symbol table and pushes it onto the argument stack
+//	@3:	If the user specified SQRT or ABS, a quad is generated and the result put in a temp var
+//
+//*************************************************************************************************
+void Unit():
+{
+  Token unit = null;
+}
+{
+  unit = < ID >
+  	{
+  	  	String image = unit.image.toUpperCase();
+  	 	if(findSTEntryById(image) == -1)
+	      	throw new RuntimeException("Variable " + unit.image + " not declared!");
+
+		argumentStack.push(image);
+  	}
+  	
+| unit = < INT >
+	{
+	  	if(findSTEntryById(unit.image) == -1)
+      		genSTEntry(unit.image);
+	  	argumentStack.push(unit.image);
+	}
+	
+| ((unit = < SQRT >| unit =< ABS >)?< LPARAN > Expression() < RPARAN >)
+	{
+		if(!(unit == null))
+		{
+		  	String temp = newTemp();
+			genQuad(unit.image, argumentStack.pop(), " ", temp);
+
+			genSTEntry(temp);
+			argumentStack.push(temp);	
+		}
+
+	}
+}
+//*************************************************************************************************
+// End Unit Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin RelOp Production
+//	Returns the matched operator.
+//
+//*************************************************************************************************
+String Rel_Op():
+{}
+{
+  (< LT > | < LE > | < EQ > | < NE > | < GE > | < GT >)
+	{
+		return getToken(0).image;
+	}
+}
+//*************************************************************************************************
+// End RelOp Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin MulOp Production
+//	Returns the matched operator.
+//
+//*************************************************************************************************
+String Mul_Op():
+{}
+{
+  (< MUL > |< DIV >)
+	  {
+	    return getToken(0).image;
+	  }
+}
+//*************************************************************************************************
+// End MulOp Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin AddOp Production
+//	Returns the matched operator.
+//
+//*************************************************************************************************
+String Add_Op():
+{}
+{
+  (< PLS > |< MIN >)
+	  {
+	    return getToken(0).image;
+	  }
+}
+//*************************************************************************************************
+// End AddOp Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Unary Production
+//	Returns the matched operator.
+//
+//*************************************************************************************************
+String Unary_Op():
+{}
+{
+  (< PLS > | < MIN > | < NOT >)
+	  {
+	    return getToken(0).image;
+	  }
+}
+//*************************************************************************************************
+// End UnaryOp Production
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+// Begin Tokens and Skip
+//*************************************************************************************************
+SKIP :
+{ " " | "\t" | "\n" | "\r" | < "//" ([" " - "!", "#" - "~"])*  >} //(Last one is a single-line comment)
+
+
+//Punctuation
+TOKEN:
+{
+	< COLON: 	":" 	>
+| 	< SEMICOL: 	";" 	>
+| 	< COMMA: 	"," 	>
+| 	< LPARAN: 	"(" 	>
+| 	< RPARAN: 	")" 	>
+}
+
+//Relational Operators
+TOKEN:
+{
+ 	< LE: "<=" 	>
+| 	< GE: ">=" 	>
+|  	< NE: "/=" 	>
+|  	< LT: "<" 	>
+| 	< GT: ">"   >
+|  	< EQ: "=" 	>
+}
+
+//Binary/Unary Operators
+TOKEN:
+{
+ 	< MUL:  "*"		>
+| 	< DIV:  "/"		>
+| 	< PLS:  "+"		>
+| 	< MIN:  "-"		>
+| 	< NOT:  "^"		>
+|   < AND:  "&"		>
+| 	< OR:   "|"		>
+|	< ASSN: ":="	>	
+}
+ 
+//Reserved Words
+TOKEN:
+{
+  	< ELSE: 	"ELSE"  | "else"	>
+|   < ELSIF:	"ELSIF" | "elsif"	>
+|   < END:		"END" 	| "end"		>
+|   < EXIT:		"EXIT" 	| "exit"	>
+|   < GET:		"GET" 	| "get"		>
+|   < IF:		"IF" 	| "if"		>
+|   < LOOP:		"LOOP" 	| "loop"	>
+|   < PUT:		"PUT"	| "put"		>
+|   < THEN:		"THEN" 	| "then"	>
+|   < WHILE:	"WHILE" | "while"	>
+|   < SQRT:		"SQRT" 	| "sqrt"	>
+| 	< ABS:		"ABS" 	| "abs"		>	
+
+//Sometimes EOF doesn't work, so added a dedicated quit keyword
+|	< QUIT:		"$QUIT"  >
+}
+
+//Lexical Items
+TOKEN:
+{
+  < ID: < LETTER > (< LETTER > | < DIGIT >)*	>
+| < INT: < DIGIT >  (< DIGIT >)*				>
+| < STRING:"\"" ([" " - "!", "#" - "~"])* "\""	>
+| < #LETTER: ["a" - "z", "A" - "Z"] 			>
+| < #DIGIT: ["0" - "9"] 						>
+}
+//*************************************************************************************************
+// End Tokens and Skip
+//*************************************************************************************************
